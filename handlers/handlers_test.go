@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -115,7 +116,7 @@ func TestDoctorHandler(t *testing.T) {
 		data.NewFakeKubeSecretGetterCreator(nil, nil),
 		apiClient,
 	)
-	resp, err := getTestHandlerResponse(doctorHandler)
+	resp, err := postTestHandlerResponse(doctorHandler)
 	assert.NoErr(t, err)
 	assert200(t, resp)
 	respData, err := ioutil.ReadAll(resp.Body)
@@ -125,7 +126,7 @@ func TestDoctorHandler(t *testing.T) {
 	assert.NoErr(t, err)
 	// invoke the handler a 2nd time to ensure that unique IDs are created for
 	// each request
-	resp2, err := getTestHandlerResponse(doctorHandler)
+	resp2, err := postTestHandlerResponse(doctorHandler)
 	assert.NoErr(t, err)
 	assert200(t, resp2)
 	respData2, err := ioutil.ReadAll(resp2.Body)
@@ -166,6 +167,18 @@ func getTestHandlerResponse(handler http.Handler) (*http.Response, error) {
 	server := httptest.NewServer(r)
 	defer server.Close()
 	resp, err := http.Get(server.URL)
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func postTestHandlerResponse(handler http.Handler) (*http.Response, error) {
+	r := mux.NewRouter()
+	r.Handle("/", handler)
+	server := httptest.NewServer(r)
+	defer server.Close()
+	resp, err := http.Post(server.URL, "text/plain", bytes.NewBuffer([]byte("skip")))
 	if err != nil {
 		return nil, err
 	}

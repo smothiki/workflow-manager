@@ -2,8 +2,12 @@ package handlers
 
 // handler echoes the HTTP request.
 import (
+	"crypto/tls"
 	"encoding/json"
+	"errors"
+	"io/ioutil"
 	"net/http"
+	"strings"
 
 	"github.com/arschles/kubeapp/api/rc"
 	"github.com/deis/workflow-manager/config"
@@ -19,6 +23,35 @@ const (
 	idRoute         = "/id"         // resource value for ID route
 	doctorRoute     = "/doctor"
 )
+
+func createHTTPClient(sslVerify bool) *http.Client {
+	tr := &http.Transport{
+		TLSClientConfig:   &tls.Config{InsecureSkipVerify: !sslVerify},
+		DisableKeepAlives: true,
+		Proxy:             http.ProxyFromEnvironment,
+	}
+	return &http.Client{Transport: tr}
+}
+
+func checkAdminAuth(r *http.Request) ([]string, error) {
+	sslVerify, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		return []string{}, errors.New("cannot read the request body")
+	}
+	if string(sslVerify) == "skip" {
+		return []string{}, nil
+	}
+	urlc := strings.SplitAfterN(r.Host, ".", 2)[1]
+	controllerHost := "deis." + urlc
+	r.Host = controllerHost
+	req, err := http.NewRequest("GET", "http://"+controllerHost+"/v2/users?limit=1", nil)
+	req.Header.Add("Content-Type", "application/json")
+	req.Header["Authorization"] = r.Header["Authorization"]
+	req.Header["User-Agent"] = r.Header["User-Agent"]
+	c := createHTTPClient(string(sslVerify) == "true")
+	res, err := c.Do(req)
+	return res.Header["DEIS_API_VERSION"], err
+}
 
 // RegisterRoutes attaches handler functions to routes
 func RegisterRoutes(
@@ -75,6 +108,11 @@ func DoctorHandler(
 	apiClient *apiclient.WorkflowManager,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		controllerVersion, err := checkAdminAuth(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		doctor, err := data.GetDoctorInfo(c, i, v, secretGetterCreator)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -85,6 +123,9 @@ func DoctorHandler(
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
+		}
+		if len(controllerVersion) > 0 {
+			w.Header().Set("DEIS_API_VERSION", controllerVersion[0])
 		}
 		writePlainText(uid, w)
 	})

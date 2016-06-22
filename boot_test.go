@@ -111,7 +111,7 @@ func testPostNoBody(route string) (*http.Response, *httptest.Server, error) {
 	}
 	server := newServer(apiClient)
 	defer server.Close()
-	resp, err := httpPost(server, route, "")
+	resp, err := httpPost(server, route, "skip")
 	if err != nil {
 		return nil, nil, err
 	}
